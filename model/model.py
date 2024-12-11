@@ -6,7 +6,7 @@ from tqdm import tqdm
 from dgl.nn.pytorch import GATConv
 import numpy as np
 import math
-
+import pdb
 
 class RelationAgg(nn.Module):
     def __init__(self, n_inp: int, n_hid: int):
@@ -34,12 +34,12 @@ class RelationAgg(nn.Module):
 class TemporalAgg(nn.Module):
     def __init__(self, n_inp: int, n_hid: int, time_window: int, device: torch.device):
         """
-
         :param n_inp      : int         , input dimension
         :param n_hid      : int         , hidden dimension
         :param time_window: int         , the number of timestamps
         :param device     : torch.device, gpu
         """
+
         super(TemporalAgg, self).__init__()
 
         self.proj = nn.Linear(n_inp, n_hid)
@@ -81,7 +81,6 @@ class TemporalAgg(nn.Module):
 class HTGNNLayer(nn.Module):
     def __init__(self, graph: dgl.DGLGraph, n_inp: int, n_hid: int, n_heads: int, timeframe: list, norm: bool, device: torch.device, dropout: float):
         """
-
         :param graph    : dgl.DGLGraph, a heterogeneous graph
         :param n_inp    : int         , input dimension
         :param n_hid    : int         , hidden dimension
@@ -112,11 +111,16 @@ class HTGNNLayer(nn.Module):
             for ttype in timeframe
         })
         
-        # inter time aggregation modules
+        # # inter time aggregation modules
         self.cross_time_agg = nn.ModuleDict({
             ntype: TemporalAgg(n_hid, n_hid, len(timeframe), device)
             for ntype in graph.ntypes
         })
+                # inter time aggregation modules
+        # self.cross_time_agg = nn.ModuleDict({
+        #     ntype: TemporalAgg(n_hid, n_hid, 2, device)
+        #     for ntype in graph.ntypes
+        # })
         
         # gate mechanism
         self.res_fc = nn.ModuleDict()
@@ -148,7 +152,8 @@ class HTGNNLayer(nn.Module):
         # same type neighbors aggregation
         # intra_features, dict, {'ttype': {(stype, etype, dtype): features}}
         intra_features = dict({ttype:{} for ttype in self.timeframe})
-
+        # intra_features = dict({ttype:{} for ttype in self.timeframe if ttype in graph.nodes['actor'].data})
+        
         for stype, etype, dtype in graph.canonical_etypes:
             rel_graph = graph[stype, etype, dtype]
             reltype = etype.split('_')[0]
@@ -167,6 +172,8 @@ class HTGNNLayer(nn.Module):
                 for stype, etype, dtype in intra_features[ttype]:
                     if ntype == dtype:
                         types_features.append(intra_features[ttype][(stype, etype, dtype)])
+                # pdb.set_trace()
+                # types_features = [tensor for tensor in types_features if tensor.numel() > 0 and not torch.equal(tensor, torch.zeros_like(tensor))]
 
                 types_features = torch.stack(types_features, dim=1)
                 out_feat = self.inter_rel_agg[ttype](types_features)
@@ -230,9 +237,17 @@ class HTGNN(nn.Module):
         # inp_feat: dict, {'ntype': {'ttype': features}}
         inp_feat = {}
         for ntype in graph.ntypes:
+            # pdb.set_trace()
             inp_feat[ntype] = {}
             for ttype in self.timeframe:
-                inp_feat[ntype][ttype] = self.adaption_layer[ntype](graph.nodes[ntype].data[ttype])
+                # if ttype in graph.nodes[ntype].data:
+                # try:
+                t = graph.nodes[ntype].data[ttype]
+                inp_feat[ntype][ttype] = self.adaption_layer[ntype](t)
+                
+                # except Exception as e:
+                #     pdb.set_trace()
+                #     print
 
         # gnn
         for i in range(self.n_layers):
@@ -260,15 +275,13 @@ class LinkPredictor(nn.Module):
         return {'score': y}
 
     def forward(self, graph: dgl.DGLGraph, node_feat: torch.tensor):
-        """
-        
+        """       
         :param graph    : dgl.DGLGraph  
         :param node_feat: torch.tensor
         """
         with graph.local_scope():
             graph.ndata['h'] = node_feat
             graph.apply_edges(self.apply_edges)
-        
             return graph.edata['score']
 
 

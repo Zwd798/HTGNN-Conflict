@@ -4,19 +4,22 @@ import torch.nn.functional as F
 import numpy as np
 from gensim.models import KeyedVectors
 from sklearn.metrics import roc_auc_score, average_precision_score, accuracy_score, f1_score
-
+import pdb
 
 def compute_metric(pos_score, neg_score):
     pred = torch.cat((pos_score.squeeze(1), neg_score.squeeze(1))).detach().cpu()
     label = torch.cat((torch.ones(pos_score.shape[0]), torch.zeros(neg_score.shape[0])))
     pred_tag = torch.round(torch.sigmoid(pred))
     
+    # print('label')
+    # print(label)
+    # print(pred_tag)
     auc = roc_auc_score(label, pred)
     ap = average_precision_score(label, pred)
-#     acc = accuracy_score(label, pred_tag)
-#     f1 = f1_score(label, pred_tag)
-
-    return auc, ap
+    acc = accuracy_score(label, pred_tag)
+    f1 = f1_score(label, pred_tag)
+    print(f1)
+    return auc, ap, acc, f1
 
 
 def compute_loss(pos_score, neg_score, device):
@@ -27,7 +30,7 @@ def compute_loss(pos_score, neg_score, device):
 
 
 def mp2vec_feat(path, g):
-    wordvec = KeyedVectors.load(path, mmap='r')
+    wordvec = KeyedVectors.load(path, mmap='r') #Can I load some random vectors here?
     for ntype in g.ntypes:
         if ntype == 'author':
             prefix = 'a_'
@@ -37,7 +40,7 @@ def mp2vec_feat(path, g):
             prefix = 't_'
         else:
             break
-
+        
         feat = torch.zeros(g.num_nodes(ntype),128)
         for j in range(g.num_nodes(ntype)):
             try:
@@ -47,6 +50,16 @@ def mp2vec_feat(path, g):
 #                 print(f'{prefix}{j}')
                 continue
             
+        g.nodes[ntype].data['feat'] = feat
+    
+    return g
+
+def mp2vec_feat_acled(path, g):
+    for ntype in g.ntypes:
+        feat = torch.zeros(g.num_nodes(ntype),128)
+        for j in range(g.num_nodes(ntype)):
+            feat[j] = torch.from_numpy(np.random.rand(128))
+
         g.nodes[ntype].data['feat'] = feat
     
     return g
